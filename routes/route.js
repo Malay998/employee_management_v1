@@ -82,6 +82,7 @@ router.get("/department/:id", async function (req, res) {
         },
         include: {
             employees: true,
+            hod: true
         },
     });
     if (!dept) {
@@ -165,39 +166,52 @@ router.post("/department", async function (req, res) {
 // update the employee
 router.put("/employee/:id", async function (req, res) {
     const id = parseInt(req.params.id);
+    
     try {
-        const {emp_name, emp_email, dept_id,hodOf} = req.body;
-        const employee = await prisma.employee.update({
-            where: {
-                emp_id: id
-            },
+        const { emp_name, emp_email, dept_id } = req.body;
+        const employee = await prisma.employee.findUnique({     // fetching the current employee details to const employee
+            where: { emp_id: id },
+            include: { department: {
+                include: {
+                    hod: true
+                }
+            }}
+        });
+        
+        if (!employee) {
+            res.status(404).send("Employee not found");
+            return;
+        }
+
+        const prevDeptId = employee.department.department_id;   // storing the current dept id
+        
+        if (prevDeptId !== dept_id && employee.department.hod.emp_id === id) {     // checking if prev !== given && employee is the head of the curr dept
+            console.log("inside the if statement")
+            await prisma.department.update({
+                where: { department_id: prevDeptId },
+                data: { hod_id: null }      // making the hod_id to null of the current department
+            });
+        }
+
+        await prisma.employee.update({
+            where: { emp_id: id },
             data: {
                 emp_name: emp_name,
                 emp_email: emp_email,
-                department: {
-                    connect: {
-                        department_id: parseInt(dept_id)
-                    }
-                },
-                hodOf: {
-                    connect: {
-                        department_id: parseInt(hodOf)
-                    }
-                }
+                dept_id: dept_id,
+                hodOf: undefined    // hod or not, just simply remove the hodOf desig. off the employee when changed to the department
             }
         });
-        res.status(201).send("The employee is successfully updated!!");
+        
+        res.status(200).send("The employee is successfully updated!!");
+
+    
     } catch (error) {
-
         if (error.code === "InvalidInputErrro") {
-
-            res.status(400).json({message: "Invalid Input: " + error.message});
-
-        }else {
-
+            res.status(400).json({ message: "Invalid Input: " + error.message });
+        } else {
             console.error(error);
-            res.status(500).json({message: "An error occurred while updating the employee"});
-
+            res.status(500).json({ message: "An error occurred while updating the employee" });
         }
     }
 });
